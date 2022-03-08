@@ -5,12 +5,16 @@ jma = Japan Meteorological Agency（気象庁 潮位表）
 usc = University of South Carolina（The Wethey Lab）
 
 ※ 
-　jcg は１０年分作成しておく（全データ）
-　jma は年毎（更新毎）に自動生成（その年の全データ）
+　jcg は20年分作成しておく（全データ）
+　jma は年毎（更新発生時）に自動生成（その年の全データ）
 　usc はリクエスト発生都度生成（対象年月日の対象データ）
+　　　ただし場所データは固定値
 
   data
-    |
+    place
+      jcg_places.dt （jcg場所データ固定値）
+      jma_places.dt （jma場所データ年更新）
+      usc_places.dt （usc場所データ固定値）
     jcg
         XXXXXX　（XXXXXX部分は場所名）
          |
