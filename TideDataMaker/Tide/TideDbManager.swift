@@ -221,6 +221,26 @@ class TideDB: NSObject {
         return list
     }
     
+    // 都道府県を読込（北海道、青森、秋田…等）
+    public func getStateName(sno: Int) -> String {
+        assert(isOpen(), "TideDB has not been opened.(getStateName[rno=\(sno)])")
+        var name = ""
+        let sql = "select * from state where sno=?"
+        do {
+            let rs = try db?.executeQuery(sql, values: [sno])
+            while (rs?.next())! {
+                name =  (rs?.string(forColumn: Com.isJapanese ? "name" : "roman"))!
+                break
+            }
+        }
+        catch let error as NSError {
+            // エラー
+            Com.XLOG(error)
+        }
+        return name
+    }
+
+    
     // 場所名を読込（名洗-H4, 鹿島-H4 …等）
     public func getLocationName(sno: Int) -> Array<LocationItem>  {
         assert(isOpen(), "TideDB has not been opened.(getLocationName[sno=\(sno)])")

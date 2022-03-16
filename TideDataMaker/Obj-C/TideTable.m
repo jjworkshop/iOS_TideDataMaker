@@ -798,8 +798,8 @@ enum {
 		}
 		else	{
 			// あってはならない
-        	NSAssert(false, @"It can not be...");
-			break;
+        	//NSAssert(false, @"It can not be...");
+            return 99;
 		}
 	}
 	

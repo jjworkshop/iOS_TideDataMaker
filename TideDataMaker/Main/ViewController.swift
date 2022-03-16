@@ -12,17 +12,26 @@ class ViewController: UIViewController {
     let fm = FileManager.default
     let db = TideDB.sharedInstance
     let calendar = Calendar(identifier: .gregorian)
+    let dateFormatter = DateFormatter()
     let tideTable = TideTableWrapper()
     var histryArray: Array<TD2item> = []
     
     let JCG = "jcg"
+    let PLACE = "place"
+    let PLACE_DT = "jcg_places.dt"
     let from_year = 2022
-    let to_year   = 2022        // TODO: DEBUG: 2041
+    let to_year   = 2022        // TODO: 2041
     
+    var jcgDataPath: String = ""
+    var placeDataPath: String = ""
+
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        
+        dateFormatter.calendar = calendar
+        dateFormatter.locale = Locale(identifier: "ja_JP")
+        dateFormatter.timeZone = TimeZone(identifier:  "Asia/Tokyo")
+
         // データのルートパスを作成
         let dataRootPath = Com.getCachePath() + "/data"
         do {
@@ -37,78 +46,174 @@ class ViewController: UIViewController {
         }
 
         
-        // 場所データリスト取得
+        // 場所データリスト取得（都道府県毎のループですべての場所を取得）
         var placeList: Array<LocationItem> = []
-        // TODO: DEBUG: for sno in 1...80 {
-        for sno in 12...12 {
+        for sno in 1...80 {
             placeList += db.getLocationName(sno: sno)
         }
                 
-        // 場所毎データ作成の処理
-        let jcgDataPath = dataRootPath + "/\(JCG)"
-        do {
-            try fm.createDirectory(atPath: jcgDataPath, withIntermediateDirectories: false, attributes: nil)
-        }
-        catch let error as NSError {
-            Com.XLOG(error)
-        }
-        for place in placeList {
-            makeData(place: place, dataPath: jcgDataPath)
+        
+        
+        for (idx, _) in placeList.enumerated() {
+            let TK = seqToTK(seq: idx + 1)
+            print ("TK: \(TK)")
         }
         
-        // 潮汐名データ作成
-        makeShioData(dataPath: dataRootPath)
-    }
-
-
-    // 場所毎のデータを作成
-    func makeData(place: LocationItem, dataPath: String) {
-        // タイド計算用に UserDefaults にデータを保存
-        setTideDataForCalc(name: place.name)
-        // 場所のタイドデータを作成
-        let name = place.name.replacingOccurrences(of: "/", with: "_")
-        Com.XLOG("PLACE: \(name)")
-        let placePath = dataPath + "/\(name)"
+        
+        // 場所毎データ作成の処理
+        jcgDataPath = dataRootPath + "/\(JCG)"
+        placeDataPath = dataRootPath + "/\(PLACE)"
         do {
-            try fm.createDirectory(atPath: placePath, withIntermediateDirectories: false, attributes: nil)
-            // 場所の info.dt 作成
-            makeInfoDT(place: place, dataPath: placePath)
+            try fm.createDirectory(atPath: jcgDataPath, withIntermediateDirectories: false, attributes: nil)
+            try fm.createDirectory(atPath: placeDataPath, withIntermediateDirectories: false, attributes: nil)
             for year in from_year...to_year {
-                let yearPath = placePath + "/\(year)"
+                let yearPath = jcgDataPath + "/\(year)"
                 try fm.createDirectory(atPath: yearPath, withIntermediateDirectories: false, attributes: nil)
-                for month in 1...12 {
-                    let motnPaht = yearPath + "/" + String(format: "%02d", month)
-                    try fm.createDirectory(atPath: motnPaht, withIntermediateDirectories: false, attributes: nil)
-                    let firstDate = calendar.date(from: DateComponents(year: year, month: month))!
-                    let add = DateComponents(month: 1, day: -1) // １ヶ月進めて１日戻すことにより月末日を取得
-                    let lastDate = calendar.date(byAdding: add, to: firstDate)!
-                    for day in 1...lastDate.day {
-                        // タイド計算
-                        let targetDate = calendar.date(from: DateComponents(year: year, month: month, day: day))!
-                        tideTable.make(targetDate, load: day == 1)
-                        let prefix = "\(motnPaht)/" + String(format: "%02d", day)
-                        // 場所の指定日付の DD_event.dt 作成
-                        let eventFilePath = "\(prefix)_event.dt"
-                        fm.createFile(atPath: eventFilePath, contents: nil, attributes: nil)
-                        var file = FileHandle(forWritingAtPath: eventFilePath)!
-                        makeEventDT(file: file, date: targetDate)
-                        file.closeFile()
-                        // 場所の指定日付の DD_tide.dt 作成
-                        let tideFilePath = "\(prefix)_tide.dt"
-                        fm.createFile(atPath: tideFilePath, contents: nil, attributes: nil)
-                        file = FileHandle(forWritingAtPath: tideFilePath)!
-                        makeTideDT(file: file, date: targetDate)
-                        file.closeFile()
-                    }
-                }
             }
         }
         catch let error as NSError {
             Com.XLOG(error)
         }
+        for (idx, place) in placeList.enumerated() {
+            if place.name != "名洗-H4" { continue }   // TODO: DEBUG
+            let TK = seqToTK(seq: idx + 1)
+            makeData(TK: TK, place: place)
+            Thread.sleep(forTimeInterval: 0.05)
+            
+        }
+        
+        // TODO: DEBUG
+        // 潮汐名データ作成
+        // TODO: makeShioData(dataPath: dataRootPath)
+    }
+
+    // シーケンス番号からをTK（地点記号）を生成
+    func seqToTK(seq: Int) -> String {
+        let TK_CODES = ["2","3","4","5","6","7","8","9","A","B","C","D","E","F","G","H","J","K","L","M","N","P","Q","R","S","T","U","V","W","X","Y","Z"]
+        let listCount = TK_CODES.count
+        let idx1 = Int(seq / listCount)
+        let idx2 = seq % listCount
+        return TK_CODES[idx1] + TK_CODES[idx2]
+    }
+
+    // 場所毎のデータを作成（場所毎の処理）
+    func makeData(TK: String, place: LocationItem) {
+        var addPlaceInfoFlg = false
+        // タイド計算用に UserDefaults にデータを保存
+        setTideDataForCalc(name: place.name)
+        // 場所のタイドデータを作成
+        let name = place.name.replacingOccurrences(of: "/", with: "／")
+        Com.XLOG("PLACE: \(name)")
+        // 年毎のループ
+        for year in from_year...to_year {
+            // 月毎のループ
+            for month in 1...12 {
+                let firstDate = calendar.date(from: DateComponents(year: year, month: month))!
+                let add = DateComponents(month: 1, day: -1) // １ヶ月進めて１日戻すことにより月末日を取得
+                let lastDate = calendar.date(byAdding: add, to: firstDate)!
+                // 日」毎のループ
+                for day in 1...lastDate.day {
+                    // タイド計算
+                    let targetDate = calendar.date(from: DateComponents(year: year, month: month, day: day))!
+                    tideTable.make(targetDate, load: day == 1)
+                    if !addPlaceInfoFlg {
+                        // 場所情報（jcg_places.dt）に追加（このタイミングでないと tideTable.graphscale が設定されていないので）
+                        addPlaceInfo(TK: TK, name: name, place: place)
+                        addPlaceInfoFlg = true
+                    }
+                    // タイドデータ作成（999.DT）フォーマットは、気象庁の潮位表データフォーマットにあわせている
+                    addPlaceTideData(TK: TK, date: targetDate)
+                }
+            }
+        }
     }
     
-    // 場所毎のデータを作成
+    // 場所情報を jcg_places.dt に追加
+    func addPlaceInfo(TK: String, name:String, place: LocationItem) {
+        let infoFilePath = "\(placeDataPath)/\(PLACE_DT)"
+        if !fm.fileExists(atPath: infoFilePath) {
+            fm.createFile(atPath: infoFilePath, contents: nil, attributes: nil)
+        }
+        let file = FileHandle(forWritingAtPath: infoFilePath)!
+        let detail = db.getLocationDetail(place.name)!
+        let lat = round((db.FNDG(detail.lat))*10000)/10000
+        let lon = round((db.FNDG(detail.lon))*10000)/10000
+        let lat_str = String(format: "%.04f", lat)
+        let lon_str = String(format: "%.04f", lon)
+        let ele_str = String(format: "%.01f", round((getElevation(lat: lat, lon: lon))*10)/10)
+        let msl_str = String(format: "%.2f", detail.TC0)
+        let todoufuken = db.getStateName(sno: detail.sno)
+        let graphscale = tideTable.graphscale
+        let text = "\(TK)\t\(name)\t\(lat_str)\t\(lon_str)\t\(ele_str)\t\(msl_str)\t\(todoufuken)\t\(graphscale)\r"
+        let contentData = text.data(using: .utf8)!
+        file.seekToEndOfFile()
+        file.write(contentData)
+        file.closeFile()
+    }
+    
+    // 標高を取得
+    var semaphore : DispatchSemaphore!
+    var elevation: Double = 0
+    func getElevation(lat: Double, lon: Double) -> Double {
+        elevation = 0
+        let urlStr = "https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php?lat=\(lat)&lon=\(lon)&outtype=JSON"
+        semaphore = DispatchSemaphore(value: 0)
+        var request = URLRequest(url: URL(string: urlStr)!)
+        request.httpMethod = "GET"
+        URLSession.shared.dataTask(with: request, completionHandler: requestCompleteHandler).resume()
+        semaphore.wait()
+        return elevation
+    }
+    func requestCompleteHandler(data:Data?,res:URLResponse?,err:Error?)
+    {
+        if err == nil {
+            if let data = data, let _ = res{
+                do {
+                    let json = try JSONSerialization.jsonObject(with: data, options: JSONSerialization.ReadingOptions.allowFragments) as! [String:Any]
+                    let num = json["elevation"] as? Double ?? 0
+                    elevation = num
+                }
+                catch {}
+            }
+        }
+        semaphore.signal()
+    }
+
+    
+    // タイドデータ作成（999.dt）フォーマットは、気象庁の潮位表データフォーマットにあわせている
+    func addPlaceTideData(TK: String, date: Date) {
+        dateFormatter.dateFormat = "yy"
+        let dataFilePath = "\(jcgDataPath)/\(date.year)/\(TK).dt"
+        let file = FileHandle(forWritingAtPath: dataFilePath)!
+        let tideData = makeTideData(date: date)
+        let yymmdd = dateFormatter.string(from: date) + String(format: "% 2d", date.month) + String(format: "% 2d", date.day)
+        let hi_low = makeTideHiLowData(date: date)
+        let text = "\(tideData)\(yymmdd)\(TK)\(hi_low)\r"
+        let contentData = text.data(using: .utf8)!
+        file.seekToEndOfFile()
+        file.write(contentData)
+        file.closeFile()
+    }
+    
+    // 指定日時の潮位データ（固定長：1〜72カラム）を作成
+    func makeTideData(date: Date) -> String {
+        // 毎時潮位データ ：１～　７２カラム    　３桁×２４時間（０時から２３時）
+        // 潮位３桁の先頭にゼロは入れない
+        // 3*14 の 72 byte
+        return ""
+    }
+    
+    // 指定日時の満潮／館長データ（固定長：81〜108カラムと81〜108カラム）を作成
+    func makeTideHiLowData(date: Date) -> String {
+        // 満潮時刻・潮位 ：８１～１０８カラム    　時刻４桁（時分）、潮位３桁（ｃｍ）
+        // 干潮時刻・潮位 ：１０９～１３６カラム    時刻４桁（時分）、潮位３桁（ｃｍ）
+        // 満（干）潮が予測されない場合、満（干）潮時刻を「9999」、潮位を「999」
+        // 時間（時と分）、潮位３桁ともに選択にゼロは入れない
+        // (4+3)*8 の 56 byte
+        return ""
+    }
+    
+    // 潮汐名データ作成
     func makeShioData(dataPath: String) {
         let shioPath = dataPath + "/sio"
         do {
@@ -133,85 +238,6 @@ class ViewController: UIViewController {
         }
     }
     
-    // 場所の info.dt 作成
-    func makeInfoDT(place: LocationItem, dataPath: String) {
-        let infoFilePath = "\(dataPath)/info.dt"
-        fm.createFile(atPath: infoFilePath, contents: nil, attributes: nil)
-        let file = FileHandle(forWritingAtPath: infoFilePath)!
-        let graphscale = tideTable.graphscale
-        let detail = db.getLocationDetail(place.name)!
-        let lat = db.FNDG(detail.lat)
-        let lon = db.FNDG(detail.lon)
-        let text = "\(place.name)\t\(round((lat)*10000)/10000)\t\(round((lon)*10000)/10000)\t\(detail.sno)\t\(graphscale)\r"
-        let contentData = text.data(using: .utf8)!
-        file.seekToEndOfFile()
-        file.write(contentData)
-        file.closeFile()
-    }
-    
-    // 場所の指定日付の DD_event.dt 作成
-    func makeEventDT(file: FileHandle, date: Date) {
-        var dic: Dictionary<String, String> = [:]
-        // 日の出
-        let sunRise = Int(round(tideTable.sunRise))
-        var hhmm = AppCom.minuteToHHMM(sunRise)
-        var text = "\(hhmm)\t\(sunRise)\tSR\r"
-        dic["\(hhmm)SR"] = text
-        // 日の入り
-        let sunSet = Int(round(tideTable.sunSet))
-        hhmm = AppCom.minuteToHHMM(sunSet)
-        text = "\(hhmm)\t\(sunSet)\tSS\r"
-        dic["\(hhmm)SS"] = text
-        // 満潮干潮
-        let hiAndLowArray = tideTable.hiAndLowTextArray
-        for i in 0..<6 {
-            if (i < hiAndLowArray.count) {
-                let params = hiAndLowArray[i].split(separator: ",")
-                let hiLow  = params[0]
-                let munute = Int(params[1])!
-                hhmm = AppCom.minuteToHHMM(munute)
-                let height = Float(params[2])!
-                text = "\(hhmm)\t\(munute)\t\(hiLow)\t\(round(height*100)/100)\r"
-                dic["\(hhmm)\(hiLow)"] = text
-            }
-        }
-        // 月の出
-        let moonEventArray = tideTable.mEventArray
-        if (moonEventArray[0] != -1) {
-            let moonRise = moonEventArray[0].intValue
-            hhmm = AppCom.minuteToHHMM(moonRise)
-            text = "\(hhmm)\t\(sunSet)\tMR\r"
-            dic["\(hhmm)MR"] = text
-        }
-        // 月の入り
-        if (moonEventArray[2] != -1) {
-            let moonSet = moonEventArray[2].intValue
-            hhmm = AppCom.minuteToHHMM(moonSet)
-            text = "\(hhmm)\t\(sunSet)\tMS\r"
-            dic["\(hhmm)MS"] = text
-        }
-        // ソート
-        let sortDic = dic.sorted { $0.0 < $1.0 } .map { $0 }
-        for (_, text) in sortDic {
-            let contentData = text.data(using: .utf8)!
-            file.seekToEndOfFile()
-            file.write(contentData)
-        }
-    }
-    
-    // 場所の指定日付の DD_tide.dt 作成
-    func makeTideDT(file: FileHandle, date: Date) {
-        let yPosArray = tideTable.yPosArray
-        for i in 0..<73 {
-            // 20分単位
-            let minute = i * 20
-            let text = AppCom.minuteToHHMM(minute) + "\t\(minute)\tTD\t\(round(yPosArray[i].floatValue*100)/100)\r"
-            let contentData = text.data(using: .utf8)!
-            file.seekToEndOfFile()
-            file.write(contentData)
-        }
-    }
-
     // 月毎の sio.dt 作成
     func makeSioDT(file: FileHandle, year: Int, month: Int) {
         // ワーク用タイド情報の設定

@@ -5,17 +5,29 @@ jma = Japan Meteorological Agency（気象庁 潮位表）
 usc = University of South Carolina（The Wethey Lab）
 
 ※ 
+　jma は年毎（更新発生時）に自動生成（その年の全データ／翌年の全データ）
 　jcg は20年分作成しておく（全データ）
-　jma は年毎（更新発生時）に自動生成（その年の全データ）
-　usc はリクエスト発生都度生成（対象年月日の対象データ）
-　　　ただし場所データは固定値
+　usc はリクエスト発生都度生成（対象年月日の対象データ）←　これは jcgと重なる部分が多いので使わない
 
+AppSurfTideX
+  Python
+    jma
+      updateJmaPlace.py   潮位表掲載地点一覧表から jma_places.dt とその場所のタイドデータを更新（毎日 3:00 に実行）
   data
     place
-      jcg_places.dt （jcg場所データ固定値）
       jma_places.dt （jma場所データ年更新）
-      usc_places.dt （usc場所データ固定値）
+      jcg_places.dt （jcg場所データ固定値）
+    jma
+        2021
+          A0.dt （気象庁の潮位表データフォーマット参照）
+        2022
+        .
     jcg
+        2021
+          01.dt （気象庁の潮位表データフォーマット参照）
+        2022
+        .
+
         XXXXXX　（XXXXXX部分は場所名）
          |
          info.dt
@@ -34,10 +46,6 @@ usc = University of South Carolina（The Wethey Lab）
          2024
          .
          2041（20年分）
-    jma
-        jcgと同じ
-    usc     
-        jcgと同じ
         
     sio
      |
@@ -57,14 +65,16 @@ usc = University of South Carolina（The Wethey Lab）
 
 ■ 潮汐関連のデータフォーマット
 
- 場所データ （info.dt : 内部はTSV）
+ 場所データ （xxx_places.dt : 内部はTSV）
+    記号
     名称
     LAT
     LON
-    SNO:県名
-    グラフスケール（jcg以外は１に固定）
+    ELE（標高m）
+    MSL（平均潮位）
+    県名（都府県はCUT）
+    グラフスケール（jmbは1.0に固定）
     
-
  潮汐イベントデータ （DD_event.dt : 内部はTSV）
     時間 HH:MM
     シリアル分（0:00からの経過分）
