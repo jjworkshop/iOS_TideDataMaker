@@ -89,6 +89,14 @@ struct AppCom {
         let mm: Int = minute - hh * 60
         return String(format: "%02d:%02d", hh, mm)
     }
+    static func minuteToHHMM2(_ minute: CGFloat) -> String {
+        return minuteToHHMM2(Int(minute))
+    }
+    static func minuteToHHMM2(_ minute: Int) -> String {
+        let hh: Int = Int(minute / 60)
+        let mm: Int = minute - hh * 60
+        return String(format: "%2d%2d", hh, mm)
+    }
 
     // アプリと連携
     static func showOtherApp(urlScheme: String) -> Bool {

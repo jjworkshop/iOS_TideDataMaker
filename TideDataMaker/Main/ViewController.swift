@@ -20,7 +20,7 @@ class ViewController: UIViewController {
     let PLACE = "place"
     let PLACE_DT = "jcg_places.dt"
     let from_year = 2022
-    let to_year   = 2022        // TODO: 2041
+    let to_year   = 2041
     
     var jcgDataPath: String = ""
     var placeDataPath: String = ""
@@ -52,14 +52,6 @@ class ViewController: UIViewController {
             placeList += db.getLocationName(sno: sno)
         }
                 
-        
-        
-        for (idx, _) in placeList.enumerated() {
-            let TK = seqToTK(seq: idx + 1)
-            print ("TK: \(TK)")
-        }
-        
-        
         // 場所毎データ作成の処理
         jcgDataPath = dataRootPath + "/\(JCG)"
         placeDataPath = dataRootPath + "/\(PLACE)"
@@ -75,21 +67,20 @@ class ViewController: UIViewController {
             Com.XLOG(error)
         }
         for (idx, place) in placeList.enumerated() {
-            if place.name != "名洗-H4" { continue }   // TODO: DEBUG
+            // if place.name != "名洗-H4" { continue }   // TODO: DEBUG
             let TK = seqToTK(seq: idx + 1)
             makeData(TK: TK, place: place)
             Thread.sleep(forTimeInterval: 0.05)
             
         }
         
-        // TODO: DEBUG
         // 潮汐名データ作成
-        // TODO: makeShioData(dataPath: dataRootPath)
+        makeShioData(dataPath: dataRootPath)
     }
 
     // シーケンス番号からをTK（地点記号）を生成
     func seqToTK(seq: Int) -> String {
-        let TK_CODES = ["2","3","4","5","6","7","8","9","A","B","C","D","E","F","G","H","J","K","L","M","N","P","Q","R","S","T","U","V","W","X","Y","Z"]
+        let TK_CODES = ["A","B","C","D","E","F","G","H","J","K","L","M","N","P","Q","R","S","T","U","V","W","X","Y","Z"]
         let listCount = TK_CODES.count
         let idx1 = Int(seq / listCount)
         let idx2 = seq % listCount
@@ -97,15 +88,19 @@ class ViewController: UIViewController {
     }
 
     // 場所毎のデータを作成（場所毎の処理）
+    var max_tide = 0  // 満潮時の最大潮高
+    var min_tide = 0  // 干潮時の最小調光
     func makeData(TK: String, place: LocationItem) {
         var addPlaceInfoFlg = false
         // タイド計算用に UserDefaults にデータを保存
         setTideDataForCalc(name: place.name)
         // 場所のタイドデータを作成
         let name = place.name.replacingOccurrences(of: "/", with: "／")
-        Com.XLOG("PLACE: \(name)")
+        Com.XLOG("TK:\(TK)  PLACE: \(name)")
         // 年毎のループ
         for year in from_year...to_year {
+            max_tide = 0
+            min_tide = 0
             // 月毎のループ
             for month in 1...12 {
                 let firstDate = calendar.date(from: DateComponents(year: year, month: month))!
@@ -116,13 +111,13 @@ class ViewController: UIViewController {
                     // タイド計算
                     let targetDate = calendar.date(from: DateComponents(year: year, month: month, day: day))!
                     tideTable.make(targetDate, load: day == 1)
+                    // タイドデータ作成（999.DT）フォーマットは、気象庁の潮位表データフォーマットにあわせている
+                    addPlaceTideData(TK: TK, date: targetDate)
                     if !addPlaceInfoFlg {
-                        // 場所情報（jcg_places.dt）に追加（このタイミングでないと tideTable.graphscale が設定されていないので）
+                        // 場所情報（jcg_places.dt）に追加
                         addPlaceInfo(TK: TK, name: name, place: place)
                         addPlaceInfoFlg = true
                     }
-                    // タイドデータ作成（999.DT）フォーマットは、気象庁の潮位表データフォーマットにあわせている
-                    addPlaceTideData(TK: TK, date: targetDate)
                 }
             }
         }
@@ -149,6 +144,7 @@ class ViewController: UIViewController {
         file.seekToEndOfFile()
         file.write(contentData)
         file.closeFile()
+        // Com.XLOG("\tADDED TK:\(TK)  max=\(max_tide) min=\(min_tide)差: \(max_tide - min_tide) GS:\(graphscale)")
     }
     
     // 標高を取得
@@ -184,11 +180,15 @@ class ViewController: UIViewController {
     func addPlaceTideData(TK: String, date: Date) {
         dateFormatter.dateFormat = "yy"
         let dataFilePath = "\(jcgDataPath)/\(date.year)/\(TK).dt"
+        if !fm.fileExists(atPath: dataFilePath) {
+            fm.createFile(atPath: dataFilePath, contents: nil, attributes: nil)
+        }
         let file = FileHandle(forWritingAtPath: dataFilePath)!
+        let tideDataHead = " 72 20"    // 件数（24H x 3）と毎分（20分毎）
         let tideData = makeTideData(date: date)
-        let yymmdd = dateFormatter.string(from: date) + String(format: "% 2d", date.month) + String(format: "% 2d", date.day)
+        let yymmdd = dateFormatter.string(from: date) + String(format: "%2d", date.month) + String(format: "%2d", date.day)
         let hi_low = makeTideHiLowData(date: date)
-        let text = "\(tideData)\(yymmdd)\(TK)\(hi_low)\r"
+        let text = "\(tideDataHead)\(tideData)\(yymmdd)\(TK)\(hi_low)\r"
         let contentData = text.data(using: .utf8)!
         file.seekToEndOfFile()
         file.write(contentData)
@@ -197,20 +197,50 @@ class ViewController: UIViewController {
     
     // 指定日時の潮位データ（固定長：1〜72カラム）を作成
     func makeTideData(date: Date) -> String {
-        // 毎時潮位データ ：１～　７２カラム    　３桁×２４時間（０時から２３時）
+        // 毎時潮位データ ：３桁×２４時間（０時から２３時）
         // 潮位３桁の先頭にゼロは入れない
-        // 3*14 の 72 byte
-        return ""
+        // 3*24*3 の 216 byte
+        var tideTableStr = ""
+        let yPosArray = tideTable.yPosArray
+        for i in 0..<73 {
+            // 20分単位
+            let hight:Int = Int(round(yPosArray[i].floatValue))
+            tideTableStr += String(format: "%3d", hight)
+        }
+        return tideTableStr
     }
     
     // 指定日時の満潮／館長データ（固定長：81〜108カラムと81〜108カラム）を作成
     func makeTideHiLowData(date: Date) -> String {
-        // 満潮時刻・潮位 ：８１～１０８カラム    　時刻４桁（時分）、潮位３桁（ｃｍ）
-        // 干潮時刻・潮位 ：１０９～１３６カラム    時刻４桁（時分）、潮位３桁（ｃｍ）
+        // 満潮時刻・潮位 ：時刻４桁（時分）、潮位３桁（ｃｍ）
+        // 干潮時刻・潮位 ：時刻４桁（時分）、潮位３桁（ｃｍ）
         // 満（干）潮が予測されない場合、満（干）潮時刻を「9999」、潮位を「999」
         // 時間（時と分）、潮位３桁ともに選択にゼロは入れない
         // (4+3)*8 の 56 byte
-        return ""
+        // 満潮干潮
+        var hightTideStr = ""
+        var lowTideStr = ""
+        let hiAndLowArray = tideTable.hiAndLowTextArray
+        for i in 0..<6 {
+            if (i < hiAndLowArray.count) {
+                let params = hiAndLowArray[i].split(separator: ",")
+                let hiLow  = params[0]
+                let munute = Int(params[1])!
+                let hhmm2 = AppCom.minuteToHHMM2(munute)
+                let hight = Int(params[2])!
+                if hiLow == "H" {
+                    hightTideStr += hhmm2 + String(format: "%3d", hight)
+                    if max_tide < hight { max_tide =  hight }
+                }
+                else {
+                    lowTideStr += hhmm2 + String(format: "%3d", hight)
+                    if min_tide > hight { min_tide =  hight }
+                }
+            }
+        }
+        hightTideStr = hightTideStr + String(repeating: "*", count: (4+3)*4 - hightTideStr.count)
+        lowTideStr = lowTideStr + String(repeating: "*", count: (4+3)*4 - lowTideStr.count)
+        return "\(hightTideStr)\(lowTideStr)"
     }
     
     // 潮汐名データ作成
@@ -219,18 +249,16 @@ class ViewController: UIViewController {
         do {
             try fm.createDirectory(atPath: shioPath, withIntermediateDirectories: false, attributes: nil)
             for year in from_year...to_year {
+                // 年毎の sio.dt 作成
                 let yearPath = shioPath + "/\(year)"
                 try fm.createDirectory(atPath: yearPath, withIntermediateDirectories: false, attributes: nil)
+                let shioFilePath = "\(yearPath)/sio.dt"
+                fm.createFile(atPath: shioFilePath, contents: nil, attributes: nil)
+                let file = FileHandle(forWritingAtPath: shioFilePath)!
                 for month in 1...12 {
-                    let monthPaht = yearPath + "/" + String(format: "%02d", month)
-                    try fm.createDirectory(atPath: monthPaht, withIntermediateDirectories: false, attributes: nil)
-                    // 月毎の sio.dt 作成
-                    let shioFilePath = "\(monthPaht)/sio.dt"
-                    fm.createFile(atPath: shioFilePath, contents: nil, attributes: nil)
-                    let file = FileHandle(forWritingAtPath: shioFilePath)!
-                    makeSioDT(file: file, year: year, month: month)
-                    file.closeFile()
+                    addSioDT(file: file, year: year, month: month)
                 }
+                file.closeFile()
             }
         }
         catch let error as NSError {
@@ -238,8 +266,8 @@ class ViewController: UIViewController {
         }
     }
     
-    // 月毎の sio.dt 作成
-    func makeSioDT(file: FileHandle, year: Int, month: Int) {
+    // 月毎に sio.dt に追加
+    func addSioDT(file: FileHandle, year: Int, month: Int) {
         // ワーク用タイド情報の設定
         let sioNames = ["大潮", "中潮", "小潮", "長潮", "若潮", "大潮*"]
         var text = ""
@@ -254,6 +282,7 @@ class ViewController: UIViewController {
             if (!text.isEmpty) { text += "\t"}
             text += sioNames[idx]
         }
+        text = "\(month)\t\(lastDate.day)\t\(text)\n"
         let contentData = text.data(using: .utf8)!
         file.seekToEndOfFile()
         file.write(contentData)
