@@ -137,9 +137,10 @@ class ViewController: UIViewController {
         let lon_str = String(format: "%.04f", lon)
         let ele_str = String(format: "%.01f", round((getElevation(lat: lat, lon: lon))*10)/10)
         let msl_str = String(format: "%.2f", detail.TC0)
-        let todoufuken = db.getStateName(sno: detail.sno)
+        // let todoufuken = db.getStateName(sno: detail.sno)
+        let sno = detail.sno
         let graphscale = tideTable.graphscale
-        let text = "\(TK)\t\(name)\t\(lat_str)\t\(lon_str)\t\(ele_str)\t\(msl_str)\t\(todoufuken)\t\(graphscale)\r"
+        let text = "\(TK)\t\(name)\t\(lat_str)\t\(lon_str)\t\(ele_str)\t\(msl_str)\t\(sno)\t\(graphscale)\r"
         let contentData = text.data(using: .utf8)!
         file.seekToEndOfFile()
         file.write(contentData)

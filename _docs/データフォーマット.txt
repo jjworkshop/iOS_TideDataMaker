@@ -59,7 +59,7 @@ AppSurfTideX
 ■ 潮汐関連のデータフォーマット
 
  場所データ （xxx_places.dt : 内部はTSV）
-    記号
+    TK（記号）
     名称
     LAT
     LON
