@@ -60,12 +60,12 @@ AppSurfTideX
 
  場所データ （xxx_places.dt : 内部はTSV）
     TK（記号）
-    名称
+    NAME（名称）
     LAT
     LON
     ELE（標高m）
     MSL（平均潮位）
-    県名（都府県はCUT）
+    SNO（県コード）
     グラフスケール（jmbは1.0に固定）
     
  潮汐イベントデータ （DD_event.dt : 内部はTSV）

@@ -203,7 +203,7 @@ class ViewController: UIViewController {
         // 3*24*3 の 216 byte
         var tideTableStr = ""
         let yPosArray = tideTable.yPosArray
-        for i in 0..<73 {
+        for i in 0..<72 {       // 最後のデータと、翌日の最初のデータが同じなので、最後のデータはCUTしている
             // 20分単位
             let hight:Int = Int(round(yPosArray[i].floatValue))
             tideTableStr += String(format: "%3d", hight)
